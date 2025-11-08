@@ -51,15 +51,5 @@ The application edits the following Unity bundle files:
 
 **Important:** Always backup your game files before making changes. The application creates automatic backups, but it's recommended to manually backup your `bundles` folder as well.
 
-## Building from Source
-
-See [BUILD.md](BUILD.md) for detailed build instructions.
-
-## Requirements
-
-- Windows 10/11 (for the executable)
-- Python 3.8+ (if running from source)
-- Football Manager 2026 installed
-
 ## License
 MIT

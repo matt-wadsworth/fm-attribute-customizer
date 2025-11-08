@@ -8,60 +8,85 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
-    
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform_name: Windows
+            executable_ext: .exe
+          - os: macos-latest
+            platform_name: macOS
+            executable_ext: ''
+          - os: ubuntu-latest
+            platform_name: Linux
+            executable_ext: ''
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    
+
+    - name: Install Linux system dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-xinerama0 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
+
     - name: Build executable
       run: |
         python build_exe.py
-    
+
     - name: Get version from tag
       id: get_version
-      shell: pwsh
+      shell: bash
       run: |
-        if ("${{ github.ref_type }}" -eq "tag") {
-          $version = "${{ github.ref_name }}"
-        } else {
-          $version = "dev-${{ github.run_number }}"
-        }
-        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        Write-Output "Version: $version"
-    
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          version="${{ github.ref_name }}"
+        else
+          version="dev-${{ github.run_number }}"
+        fi
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "Version: $version"
+
     - name: Create release archive
-      shell: pwsh
+      shell: bash
       run: |
-        New-Item -ItemType Directory -Force -Path release | Out-Null
-        Copy-Item dist\FM26AttributeCustomizer.exe release\
-        Copy-Item README.md release\
-        if (Test-Path LICENSE) { Copy-Item LICENSE release\ }
-        Compress-Archive -Path release\* -DestinationPath "FM26AttributeCustomizer-${{ steps.get_version.outputs.version }}-Windows.zip" -Force
-    
+        mkdir -p release
+        cp "dist/FM26AttributeCustomizer${{ matrix.executable_ext }}" release/
+        cp README.md release/
+        if [ -f LICENSE ]; then cp LICENSE release/; fi
+
+        cd release
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          7z a -tzip "../FM26AttributeCustomizer-${{ steps.get_version.outputs.version }}-${{ matrix.platform_name }}.zip" *
+        else
+          zip -r "../FM26AttributeCustomizer-${{ steps.get_version.outputs.version }}-${{ matrix.platform_name }}.zip" *
+        fi
+        cd ..
+
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: FM26AttributeCustomizer-${{ steps.get_version.outputs.version }}
+        name: FM26AttributeCustomizer-${{ steps.get_version.outputs.version }}-${{ matrix.platform_name }}
         path: |
-          dist/FM26AttributeCustomizer.exe
+          dist/FM26AttributeCustomizer${{ matrix.executable_ext }}
           FM26AttributeCustomizer-*.zip
-    
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/FM26AttributeCustomizer.exe
           FM26AttributeCustomizer-*.zip
         draft: false
         prerelease: false

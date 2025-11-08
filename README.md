@@ -37,8 +37,8 @@ A GUI application for customizing attribute colours and thresholds in Football M
 
 1. Launch the application
 2. Click "Browse" and select your FM26 installation directory
-   - Typically: `C:\Program Files (x86)\Steam\steamapps\common\Football Manager 2026`
-   - Or: `D:\Games\Steam\steamapps\common\Football Manager 2026`
+   - Steam (Windows): `C:\Program Files (x86)\Steam\steamapps\common\Football Manager 2026`
+   - Gamepass `C:\XboxGames\Football Manager 2026\Content`
 3. Edit attribute ranges and colours as desired
 4. Click "Save Changes" to apply (backups are created automatically)
 5. Use "Restore Backup" if you need to revert changes
@@ -46,7 +46,7 @@ A GUI application for customizing attribute colours and thresholds in Football M
 ## Bundle Files
 
 The application edits the following Unity bundle files:
-- `ui-datacollections_assets_all.bundle` - Attribute thresholds
+- `ui-datacollections_assets_all.bundle` - Attribute thresholds & Attribute Highlighting
 - `ui-styles_assets_default.bundle` - Colour presets
 
 **Important:** Always backup your game files before making changes. The application creates automatic backups, but it's recommended to manually backup your `bundles` folder as well.

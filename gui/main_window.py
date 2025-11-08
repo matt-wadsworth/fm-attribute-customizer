@@ -1,4 +1,5 @@
 """Main application window."""
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -36,19 +37,38 @@ class MainWindow(QMainWindow):
         
         self._init_ui()
     
+    def _get_icon_path(self):
+        """Get the path to the icon file, handling both development and PyInstaller builds."""
+        if getattr(sys, 'frozen', False):
+            # Running from PyInstaller executable
+            # Try to find icon in the same directory as the executable
+            base_path = Path(sys.executable).parent
+        else:
+            # Running from source
+            base_path = Path(__file__).parent.parent
+        
+        # Try .ico first (Windows)
+        icon_path = base_path / "icon.ico"
+        if icon_path.exists():
+            return str(icon_path)
+        
+        # Try .png as fallback
+        icon_path = base_path / "icon.png"
+        if icon_path.exists():
+            return str(icon_path)
+        
+        return None
+    
     def _init_ui(self):
         """Initialize the UI."""
         self.setWindowTitle("FM26 Attribute Customizer - by MW90")
         self.setMinimumSize(460, 180)
         self.resize(460, 180)
         
-        icon_path = Path(__file__).parent.parent / "icon.ico"
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
-        else:
-            icon_path = Path(__file__).parent.parent / "icon.png"
-            if icon_path.exists():
-                self.setWindowIcon(QIcon(str(icon_path)))
+        # Set window icon
+        icon_path = self._get_icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         self.setStyleSheet("""
             QGroupBox {
                 border: 1px solid #555;

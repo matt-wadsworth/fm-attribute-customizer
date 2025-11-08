@@ -141,7 +141,13 @@ try:
 except Exception:
     pass
 
-datas = pyqt6_datas + unitypy_datas
+# Include icon file as data so it's accessible at runtime
+icon_data = []
+if icon_path and icon_path.exists():
+    # Include icon in the same directory as the executable
+    icon_data = [(str(icon_path), '.')]
+
+datas = pyqt6_datas + unitypy_datas + icon_data
 binaries = pyqt6_binaries + unitypy_binaries
 hiddenimports = pyqt6_hiddenimports + unitypy_hiddenimports
 

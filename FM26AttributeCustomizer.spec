@@ -1,13 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 import os
+import sys
 from pathlib import Path
 
 # Get project root for icon path
 project_root = Path(SPECPATH)
-icon_path = project_root / 'icon.ico'
-if not icon_path.exists():
+
+# Select icon based on platform
+if sys.platform == 'win32':
+    icon_path = project_root / 'icon.ico'
+    if not icon_path.exists():
+        icon_path = project_root / 'icon.png'
+elif sys.platform == 'darwin':
+    icon_path = project_root / 'icon.icns'
+    if not icon_path.exists():
+        icon_path = project_root / 'icon.png'
+else:  # Linux and other Unix-like systems
     icon_path = project_root / 'icon.png'
+
 icon = str(icon_path) if icon_path.exists() else None
 
 # Exclude unused PyQt6 modules to reduce size significantly
@@ -167,6 +178,19 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# Platform-specific build options
+is_windows = sys.platform == 'win32'
+is_macos = sys.platform == 'darwin'
+
+# Enable strip on Unix-like systems (macOS, Linux)
+strip_enabled = not is_windows
+
+# UPX exclusions - only relevant on Windows
+upx_exclude_list = ['vcruntime140.dll', 'python*.dll'] if is_windows else []
+
+# macOS-specific: Enable argv_emulation for better drag-and-drop support
+argv_emulation = is_macos
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -176,13 +200,13 @@ exe = EXE(
     name='FM26AttributeCustomizer',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,  # Strip disabled on Windows (requires Unix strip tool)
+    strip=strip_enabled,  # Strip enabled on Unix (macOS, Linux), disabled on Windows
     upx=True,  # Use UPX compression
-    upx_exclude=['vcruntime140.dll', 'python*.dll'],  # Don't compress critical DLLs
+    upx_exclude=upx_exclude_list,  # Don't compress critical DLLs (Windows only)
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,
+    argv_emulation=argv_emulation,  # Enable on macOS for drag-and-drop
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,

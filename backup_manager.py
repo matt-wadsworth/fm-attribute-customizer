@@ -37,11 +37,9 @@ class BackupManager:
             Tuple of (Path to the backup file, bool indicating if backup was newly created)
         """
         if original:
-            # Use fixed name for original backups
             backup_name = f"{bundle_path.name}.original"
             backup_path = self.backup_dir / backup_name
             
-            # Only create if it doesn't already exist
             if backup_path.exists():
                 return backup_path, False
         else:
@@ -112,7 +110,6 @@ class BackupManager:
                 if bundle_name is None or backup_file.name.startswith(bundle_name):
                     backups.append(backup_file)
         
-        # Sort by modification time, newest first
         backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return backups
     
@@ -151,4 +148,3 @@ class BackupManager:
         if backups:
             return backups[0]
         return None
-

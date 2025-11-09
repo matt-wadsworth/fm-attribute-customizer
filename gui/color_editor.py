@@ -8,12 +8,12 @@ from PyQt6.QtGui import QColor, QPalette
 class ColorEditor(QWidget):
     """Widget for editing a single color with color picker."""
     
-    colorChanged = pyqtSignal(str)  # Emits hex color string
+    colorChanged = pyqtSignal(str)
     
     def __init__(self, label: str = "", range_text: str = "", parent=None):
         super().__init__(parent)
         self._current_color = QColor(255, 255, 255)
-        self._range_text = range_text  # Store range text (e.g., "1-5")
+        self._range_text = range_text
         self._updating = False
         self._init_ui(label)
     
@@ -23,39 +23,33 @@ class ColorEditor(QWidget):
         
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)  # Add small spacing between elements
+        layout.setSpacing(5)
         
-        # Set minimum height for the editor to prevent squishing
         self.setMinimumHeight(35)
         
-        # Label (always create, even if empty initially)
         self.label_widget = QLabel(label if label else "")
-        self.label_widget.setMinimumWidth(120)  # Fixed width for label
+        self.label_widget.setMinimumWidth(120)
         self.label_widget.setMaximumWidth(120)
-        self.label_widget.setMinimumHeight(25)  # Ensure label has minimum height
+        self.label_widget.setMinimumHeight(25)
         self.label_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.label_widget)
         
-        # Color preview box - dark background with colored text showing range
-        # Match button height (32px)
         self.color_preview = QLabel()
-        self.color_preview.setMinimumSize(45, 32)  # Match button height
+        self.color_preview.setMinimumSize(45, 32)
         self.color_preview.setMaximumSize(45, 32)
         self.color_preview.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.color_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center the text
-        self._update_preview()  # Initialize preview with range text
+        self.color_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_preview()
         layout.addWidget(self.color_preview)
         
-        # Color picker button
         self.picker_button = QPushButton("Edit Colour")
-        self.picker_button.setMinimumWidth(90)  # Wider for "Edit Colour" text
-        self.picker_button.setMinimumHeight(32)  # Increased height
-        self.picker_button.setMaximumHeight(32)  # Fixed height
-        self.picker_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)  # Fixed to match preview
+        self.picker_button.setMinimumWidth(90)
+        self.picker_button.setMinimumHeight(32)
+        self.picker_button.setMaximumHeight(32)
+        self.picker_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.picker_button.clicked.connect(self._open_color_picker)
         layout.addWidget(self.picker_button)
         
-        # No stretch - let the ColorGrid handle spacing
         self.setLayout(layout)
     
     
@@ -67,12 +61,9 @@ class ColorEditor(QWidget):
     
     def _update_preview(self):
         """Update color preview box with dark background and colored range text."""
-        # Set text to range (e.g., "1-5") or empty if no range
         display_text = self._range_text if self._range_text else ""
         self.color_preview.setText(display_text)
         
-        # Style: dark background (#0a0f1e) with colored text (selected color)
-        # No border, 4px border-radius
         color_hex = self._current_color.name()
         self.color_preview.setStyleSheet(
             f"background-color: #0a0f1e; "
@@ -80,7 +71,7 @@ class ColorEditor(QWidget):
             f"border: none; "
             f"border-radius: 4px; "
             f"font-weight: bold; "
-            f"font-size: 13px;"  # Increased from 11px
+            f"font-size: 13px;"
         )
     
     
@@ -117,7 +108,7 @@ class ColorEditor(QWidget):
     def set_range_text(self, range_text: str):
         """Set the range text to display in the preview (e.g., '1-5')."""
         self._range_text = range_text
-        self._update_preview()  # Update preview to show new range text
+        self._update_preview()
 
 
 class ColorGrid(QWidget):
@@ -137,26 +128,21 @@ class ColorGrid(QWidget):
         from PyQt6.QtWidgets import QVBoxLayout, QGridLayout, QLabel, QSizePolicy
         
         layout = QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)  # Add some padding
-        layout.setSpacing(8)  # Add spacing between rows
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(8)
         
-        # Grid layout (removed header)
         grid = QGridLayout()
-        grid.setColumnStretch(0, 0)  # Don't stretch the column - let editors size themselves
-        grid.setSpacing(8)  # Add spacing between rows
+        grid.setColumnStretch(0, 0)
+        grid.setSpacing(8)
         
-        # Create color editor for each style class
         for i, style_class in enumerate(self.style_classes):
-            # Clean up style class name for display (without range numbers)
             base_name = style_class.replace('attribute-colour-', '').replace('-', ' ').title()
             
-            # Get range text for preview (e.g., "1-5")
             range_text = ""
             if i < len(self.ranges):
                 min_val, max_val = self.ranges[i]
                 range_text = f"{min_val}-{max_val}"
             
-            # Display name without range numbers (just the base name)
             display_name = base_name
             
             editor = ColorEditor(display_name, range_text)
@@ -167,7 +153,6 @@ class ColorGrid(QWidget):
             grid.addWidget(editor, i, 0)
         
         layout.addLayout(grid)
-        # No stretch - let the parent grid layout handle spacing
         self.setLayout(layout)
     
     def _on_color_changed(self):
@@ -193,7 +178,6 @@ class ColorGrid(QWidget):
             ranges: List of (min, max) tuples
         """
         self.ranges = ranges
-        # Update only the range text in preview boxes, not the labels
         for i, editor in enumerate(self.color_editors):
             if i < len(self.ranges):
                 min_val, max_val = self.ranges[i]
@@ -209,4 +193,3 @@ class ColorGrid(QWidget):
     def get_colors_rgba(self) -> list:
         """Get all colors as RGBA tuples."""
         return [editor.get_color_rgba() for editor in self.color_editors]
-

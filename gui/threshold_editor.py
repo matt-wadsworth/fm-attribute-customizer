@@ -10,24 +10,24 @@ class ThresholdEditor(QWidget):
     
     thresholdsChanged = pyqtSignal(list)
     colorsChanged = pyqtSignal()
-    rowAdded = pyqtSignal()  # Signal emitted when Add Row button is clicked
-    rowRemoved = pyqtSignal(int)  # Signal emitted when Remove button is clicked (index)
-    rowCountChanged = pyqtSignal()  # Signal emitted when row count changes (for window resize)
+    rowAdded = pyqtSignal()
+    rowRemoved = pyqtSignal(int)
+    rowCountChanged = pyqtSignal()
     
     def __init__(self, thresholds: list, style_classes: list, colors: list = None, parent=None):
         super().__init__(parent)
         self.thresholds = thresholds.copy()
         self.style_classes = style_classes.copy()
         self.colors = colors.copy() if colors else []
-        self.min_labels = []  # Labels showing calculated min values
+        self.min_labels = []
         self.max_spinboxes = []
-        self.color_editors = []  # Store color preview labels and pick buttons
-        self.row_widgets = []  # Store row widgets for removal
-        self.remove_buttons = []  # Store remove buttons
+        self.color_editors = []
+        self.row_widgets = []
+        self.remove_buttons = []
         self._init_ui()
     
     def _init_ui(self):
-        """Initialize the UI with row-based layout: Label - Min - Max - Preview - Pick."""
+        """Initialize the UI with row-based layout: Label - Min - Max - Preview - Edit Colour."""
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         
@@ -66,7 +66,7 @@ class ThresholdEditor(QWidget):
         self.setLayout(layout)
     
     def _create_row_editors(self):
-        """Create row editors: Label - Min - Max - Preview - Pick for each threshold."""
+        """Create row editors: Label - Min - Max - Preview - Edit Colour for each threshold."""
         if not isinstance(self.thresholds, list):
             raise TypeError(f"self.thresholds must be a list, got {type(self.thresholds)}")
         if not isinstance(self.style_classes, list):
@@ -249,7 +249,6 @@ class ThresholdEditor(QWidget):
             range_text = self.color_editors[index]['range_text']
             preview.setText(range_text)
             
-            # Convert hex to rgba for CSS (supports alpha)
             rgba = self._hex_to_rgba_css(hex_color)
             preview.setStyleSheet(
                 f"background-color: #0a0f1e; "
@@ -299,7 +298,6 @@ class ThresholdEditor(QWidget):
                 preview = self.color_editors[i]['preview']
                 color_hex = self.color_editors[i]['color']
                 preview.setText(range_text)
-                # Convert hex to rgba for CSS (supports alpha)
                 rgba = self._hex_to_rgba_css(color_hex)
                 preview.setStyleSheet(
                     f"background-color: #0a0f1e; "
@@ -325,10 +323,7 @@ class ThresholdEditor(QWidget):
 
     def _on_max_changed(self, index: int, value: int):
         """Handle maximum value change."""
-        # index is the threshold index (already filtered, no Unset/Low)
-        # Threshold is the MAX value, so update it directly
         if index < len(self.thresholds):
-            # Last threshold's max is always 20 and cannot be changed
             is_last = (index == len(self.thresholds) - 1)
             if is_last:
                 if value != 20:
@@ -341,60 +336,42 @@ class ThresholdEditor(QWidget):
                 return
             
             old_value = self.thresholds[index]
-            
-            # Calculate current min value
+
             min_value = self._calculate_min_value(index)
             
-            # When max is increased and clashes with next threshold's min, cascade adjustments down all subsequent rows
             if index < len(self.thresholds) - 1:
                 next_min = self._calculate_min_value(index + 1)
-                # If current max is >= next min, we need to cascade adjustments down all subsequent thresholds
                 if value >= next_min:
-                    # Calculate required next min (current max + 1)
                     required_min = value + 1
-                    # Cascade through all subsequent thresholds
                     for i in range(index + 1, len(self.thresholds)):
                         if i < len(self.max_spinboxes):
                             current_max_spin = self.max_spinboxes[i]
                             current_max_value = current_max_spin.value()
                             
-                            # Calculate what the min should be for this threshold
                             if i == index + 1:
-                                # First subsequent threshold's min should be (previous max + 1)
                                 required_min_for_this = value + 1
                             else:
-                                # Subsequent thresholds' min should be (previous threshold's max + 1)
                                 required_min_for_this = self.thresholds[i - 1] + 1
                             
-                            # If this threshold's max needs to be increased to accommodate
                             if current_max_value < required_min_for_this:
-                                # Increase this threshold's max to at least the required min
                                 current_max_spin.blockSignals(True)
                                 current_max_spin.setValue(required_min_for_this)
                                 self.thresholds[i] = required_min_for_this
                                 current_max_spin.blockSignals(False)
                                 
-                                # Update min labels
                                 self._update_min_labels()
                                 
-                                # Check if this threshold's min and max become the same, cascade further
                                 calculated_min = self._calculate_min_value(i)
                                 if calculated_min == required_min_for_this:
                                     self._cascade_threshold_adjustment(i)
                             
-                            # Update required_min for next iteration
                             required_min = self.thresholds[i] + 1
             
-            # When max is decreased, cascade adjustments backwards to previous thresholds
             if value < old_value:
-                # First, update the current threshold value
                 self.thresholds[index] = value
                 
-                # Cascade backwards through all previous thresholds
-                # Each previous threshold's max should be at most (next threshold's max - 1)
                 for i in range(index - 1, -1, -1):
                     if i < len(self.max_spinboxes):
-                        # This threshold's max should be at most (next threshold's max - 1)
                         next_threshold_max = self.thresholds[i + 1]
                         new_max = next_threshold_max - 1
                         
@@ -408,73 +385,55 @@ class ThresholdEditor(QWidget):
                                 self.thresholds[i] = new_max
                                 current_max_spin.blockSignals(False)
                                 
-                                # Calculate min for this threshold
                                 calculated_min = self._calculate_min_value(i)
                                 
-                                # Check if min and max become the same, cascade further backwards
                                 if calculated_min == new_max:
-                                    # This will be handled in the next iteration of the loop
                                     pass
                             else:
-                                # Max didn't change, but ensure threshold value is synced
                                 self.thresholds[i] = current_max_value
                 
-                # Cascade forward through all subsequent thresholds to recalculate and adjust their values
                 for i in range(index + 1, len(self.thresholds)):
                     if i < len(self.max_spinboxes):
-                        # Calculate what the min should be for this threshold (based on previous threshold's max)
                         calculated_min = self._calculate_min_value(i)
                         
                         current_max_spin = self.max_spinboxes[i]
                         current_max_value = current_max_spin.value()
                         
-                        # Determine the new max value for this threshold
-                        # It must be at least the calculated min
                         new_max = current_max_value
                         
-                        # If current max is less than calculated min, increase it
                         if current_max_value < calculated_min:
                             new_max = calculated_min
                         
-                        # Update the threshold if the value changed
                         if new_max != current_max_value:
                             current_max_spin.blockSignals(True)
                             current_max_spin.setValue(new_max)
                             self.thresholds[i] = new_max
                             current_max_spin.blockSignals(False)
                             
-                            # Recalculate min after updating
                             calculated_min = self._calculate_min_value(i)
                             
-                            # Check if min and max become the same, cascade further
                             if calculated_min == new_max:
                                 self._cascade_threshold_adjustment(i)
                         else:
-                            # Max didn't change, but ensure threshold value is synced
                             self.thresholds[i] = current_max_value
                 
-                # Update min labels after all adjustments
                 self._update_min_labels()
                 self._update_ranges()
                 self.thresholdsChanged.emit(self.thresholds)
                 return
             
             self.thresholds[index] = value
-            # Update all min labels since they depend on max values
             self._update_min_labels()
             self._update_ranges()
             self.thresholdsChanged.emit(self.thresholds)
     
     def _cascade_threshold_adjustment(self, index: int):
         """Cascade adjustment when a threshold's min and max become the same."""
-        # If this threshold's min and max are the same, adjust previous threshold
         if index > 0 and index < len(self.max_spinboxes):
             current_min = self._calculate_min_value(index)
             current_max = self.max_spinboxes[index].value()
             
-            # Only cascade if min and max are actually the same
             if current_min == current_max:
-                # Previous threshold should be (current max - 1)
                 prev_max = current_max - 1
                 if prev_max >= 1 and index - 1 < len(self.max_spinboxes):
                     prev_max_spin = self.max_spinboxes[index - 1]
@@ -482,12 +441,9 @@ class ThresholdEditor(QWidget):
                     if prev_max_spin.value() > prev_max:
                         prev_max_spin.setValue(prev_max)
                         self.thresholds[index - 1] = prev_max
-                        # Update min labels
                         self._update_min_labels()
-                        # Check if previous threshold's min and max are now the same
                         prev_min_calc = self._calculate_min_value(index - 1)
                         if prev_min_calc == prev_max:
-                            # Recursively cascade
                             self._cascade_threshold_adjustment(index - 1)
                     prev_max_spin.blockSignals(False)
     
@@ -499,12 +455,10 @@ class ThresholdEditor(QWidget):
                 max_val = self.max_spinboxes[i].value()
                 range_text = f"{min_val}-{max_val}"
                 
-                # Update color preview label
                 if i < len(self.color_editors):
                     color_data = self.color_editors[i]
                     if 'preview' in color_data:
                         color_data['preview'].setText(range_text)
-                        # Update color with alpha support
                         color_hex = color_data.get('color', '#FFFFFF')
                         rgba = self._hex_to_rgba_css(color_hex)
                         color_data['preview'].setStyleSheet(
@@ -519,25 +473,19 @@ class ThresholdEditor(QWidget):
     def set_thresholds(self, thresholds: list):
         """Set thresholds from a list."""
         self.thresholds = thresholds.copy()
-        # Recreate UI
         self._clear_editors()
         
-        # Validate we have matching thresholds and style_classes
         if len(self.thresholds) != len(self.style_classes):
             return
         
-        # Create new row editors
         if len(self.thresholds) > 0:
             self._create_row_editors()
-            # Update min labels after creation
             self._update_min_labels()
     
     def _clear_editors(self):
         """Clear all row editors."""
-        # Clear color editors list
         self.color_editors.clear()
         
-        # Remove all widgets from rows layout
         if hasattr(self, 'rows_layout') and self.rows_layout:
             while self.rows_layout.count() > 0:
                 item = self.rows_layout.takeAt(0)
@@ -565,7 +513,7 @@ class ThresholdEditor(QWidget):
         """Get current ranges as list of (min, max) tuples."""
         ranges = []
         for i, threshold in enumerate(self.thresholds):
-            if i < 2:  # Skip Unset and Low
+            if i < 2:
                 continue
             min_val = 1 if i == 2 else self.thresholds[i-1]
             max_val = threshold - 1 if i < len(self.thresholds) else 20
@@ -574,8 +522,6 @@ class ThresholdEditor(QWidget):
     
     def _on_add_row_clicked(self):
         """Handle Add Row button click - add a new row before the last row."""
-        # Maximum 20 rows total (including Unset/Low, so 18 editable rows)
-        # Current editable rows = len(self.thresholds)
         if len(self.thresholds) >= 18:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
@@ -585,13 +531,10 @@ class ThresholdEditor(QWidget):
             )
             return
         
-        # Emit signal to MainWindow to add a row
-        # The actual addition will be handled by MainWindow which has access to all data
         self.rowAdded.emit()
     
     def _on_remove_row_clicked(self, index: int):
         """Handle Remove button click - remove a row at the given index."""
-        # Minimum 4 rows (excluding Unset/Low, so minimum 4 editable rows)
         if len(self.thresholds) <= 4:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
@@ -601,7 +544,6 @@ class ThresholdEditor(QWidget):
             )
             return
         
-        # Cannot remove last row
         if index == len(self.thresholds) - 1:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
@@ -611,64 +553,46 @@ class ThresholdEditor(QWidget):
             )
             return
         
-        # Emit signal to MainWindow to remove the row
         self.rowRemoved.emit(index)
     
     def add_row_at_index(self, index: int, threshold: int, style_class: str, color: str):
         """Add a new row at the specified index. Called by MainWindow."""
-        # Ensure threshold doesn't exceed 19 (last row must be 20)
         threshold = min(threshold, 19)
-        
-        # Validate index - should be before the last row
         if index >= len(self.thresholds):
-            # If index is out of bounds, insert before the last row
             index = len(self.thresholds) - 1 if len(self.thresholds) > 0 else 0
         elif index < 0:
             index = 0
         
-        # Insert into arrays at the specified index
-        # This will push the element at that index (and all after it) to higher indices
         self.thresholds.insert(index, threshold)
         self.style_classes.insert(index, style_class)
         self.colors.insert(index, color)
         
-        # Ensure last threshold is always 20
         if len(self.thresholds) > 0:
             self.thresholds[-1] = 20
         
-        # Recreate all rows to update labels and indices
         self._clear_editors()
         self._create_row_editors()
         self._update_min_labels()
         self._update_ranges()
         
-        # After adding, trigger cascading by simulating a max value change on the inserted row
-        # This uses the existing, well-tested _on_max_changed logic
         if index < len(self.max_spinboxes):
-            # Ensure the spinbox value matches the threshold value
             current_value = self.thresholds[index]
             self.max_spinboxes[index].blockSignals(True)
             self.max_spinboxes[index].setValue(current_value)
             self.max_spinboxes[index].blockSignals(False)
             
-            # Now trigger the cascading logic by calling _on_max_changed
-            # This will properly cascade all subsequent rows using the existing logic
             self._on_max_changed(index, current_value)
         
-        # Update button visibility
         self._update_add_button_visibility()
         self._update_remove_buttons_visibility()
         
-        # Emit signals
         self.thresholdsChanged.emit(self.thresholds)
         self.colorsChanged.emit()
         
-        # Emit signal for window resize
         self.rowCountChanged.emit()
     
     def _validate_all_rows_after_insertion(self, start_index: int):
         """Validate and fix all rows after inserting a new row, working backwards from the last row."""
-        # First, ensure the inserted row's value doesn't exceed 19
         if start_index < len(self.thresholds) and start_index < len(self.max_spinboxes):
             current_max = self.thresholds[start_index]
             if current_max > 19:
@@ -678,15 +602,11 @@ class ThresholdEditor(QWidget):
                 self.max_spinboxes[start_index].blockSignals(False)
                 self.thresholds[start_index] = 19
         
-        # Work backwards from the last row to ensure all values are valid
-        # This ensures we fix any conflicts starting from the end
         for i in range(len(self.thresholds) - 1, start_index - 1, -1):
             if i < len(self.max_spinboxes):
-                # Calculate what the min should be for this row
                 calculated_min = self._calculate_min_value(i)
                 current_max = self.thresholds[i]
                 
-                # If this is the last row, it must be 20
                 if i == len(self.thresholds) - 1:
                     if current_max != 20:
                         self.max_spinboxes[i].blockSignals(True)
@@ -695,25 +615,15 @@ class ThresholdEditor(QWidget):
                         self.max_spinboxes[i].blockSignals(False)
                         self.thresholds[i] = 20
                 else:
-                    # For non-last rows, ensure max is at least the calculated min
-                    # and at most (next row's min - 1)
                     next_min = self._calculate_min_value(i + 1)
                     max_allowed = next_min - 1
                     
-                    # Ensure max is at least the calculated min
                     new_max = max(calculated_min, current_max)
-                    # But not more than max_allowed
                     new_max = min(new_max, max_allowed)
-                    # And not more than 19 (last row must be 20)
                     new_max = min(new_max, 19)
                     
-                    # If the calculated min itself exceeds the max allowed, we have a problem
-                    # In this case, we need to adjust previous rows
                     if calculated_min > max_allowed:
-                        # This means previous rows are too high, but we'll handle that in the next iteration
-                        # For now, set this row's max to the max allowed
                         new_max = max_allowed
-                        # But ensure it's at least 1
                         new_max = max(1, new_max)
                     
                     if new_max != current_max:
@@ -722,14 +632,11 @@ class ThresholdEditor(QWidget):
                         self.thresholds[i] = new_max
                         self.max_spinboxes[i].blockSignals(False)
         
-        # Now work forward from start_index to ensure all subsequent rows are properly adjusted
-        # This handles cases where we need to increase values
         for i in range(start_index, len(self.thresholds)):
             if i < len(self.max_spinboxes):
                 calculated_min = self._calculate_min_value(i)
                 current_max = self.thresholds[i]
                 
-                # If this is the last row, it must be 20
                 if i == len(self.thresholds) - 1:
                     if current_max != 20:
                         self.max_spinboxes[i].blockSignals(True)
@@ -738,10 +645,8 @@ class ThresholdEditor(QWidget):
                         self.max_spinboxes[i].blockSignals(False)
                         self.thresholds[i] = 20
                 else:
-                    # Ensure max is at least the calculated min
                     if current_max < calculated_min:
                         new_max = calculated_min
-                        # But ensure it doesn't exceed 19 (unless it's the last row)
                         new_max = min(new_max, 19)
                         
                         self.max_spinboxes[i].blockSignals(True)
@@ -749,7 +654,6 @@ class ThresholdEditor(QWidget):
                         self.thresholds[i] = new_max
                         self.max_spinboxes[i].blockSignals(False)
         
-        # Final pass: ensure last row is always 20
         if len(self.thresholds) > 0:
             last_index = len(self.thresholds) - 1
             self.thresholds[last_index] = 20
@@ -759,37 +663,30 @@ class ThresholdEditor(QWidget):
                 self.max_spinboxes[last_index].setEnabled(False)
                 self.max_spinboxes[last_index].blockSignals(False)
         
-        # Update min labels and ranges
         self._update_min_labels()
         self._update_ranges()
     
     def remove_row_at_index(self, index: int):
         """Remove a row at the specified index. Called by MainWindow."""
-        # Remove from arrays
         self.thresholds.pop(index)
         self.style_classes.pop(index)
         self.colors.pop(index)
         
-        # Recreate all rows to update labels and indices
         self._clear_editors()
         self._create_row_editors()
         self._update_min_labels()
         self._update_ranges()
         
-        # Update button visibility
         self._update_add_button_visibility()
         self._update_remove_buttons_visibility()
         
-        # Emit signals
         self.thresholdsChanged.emit(self.thresholds)
         self.colorsChanged.emit()
         
-        # Emit signal for window resize
         self.rowCountChanged.emit()
     
     def _update_add_button_visibility(self):
         """Update visibility of Add Row button based on row count."""
-        # Maximum 20 rows total (including Unset/Low, so 18 editable rows)
         if hasattr(self, 'add_row_button'):
             self.add_row_button.setEnabled(len(self.thresholds) < 18)
     
@@ -798,7 +695,6 @@ class ThresholdEditor(QWidget):
         removable_count = len(self.thresholds) - 4
         for i, button in enumerate(self.remove_buttons):
             if button is not None:
-                # Only show on rows that can be removed (first removable_count rows, not last)
                 is_last = (i == len(self.thresholds) - 1)
                 can_remove_this_row = not is_last and i < removable_count
                 button.setVisible(can_remove_this_row)

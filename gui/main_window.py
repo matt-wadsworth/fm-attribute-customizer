@@ -1,11 +1,12 @@
 """Main application window."""
 import sys
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QFileDialog, QTabWidget, QSplitter,
                              QMessageBox, QStatusBar, QLabel, QGroupBox, QTextEdit, QDialog, QDialogButtonBox,
-                             QGridLayout, QCheckBox)
+                             QGridLayout, QCheckBox, QListWidget)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 
@@ -15,12 +16,79 @@ from backup_manager import BackupManager
 from gui.threshold_editor import ThresholdEditor
 
 
+def scan_for_fm_directories() -> List[Path]:
+    """
+    Try to discover the Football Manager 26 bundle directories by platform.
+    
+    Returns:
+        List of discovered bundle directory paths (full paths including StreamingAssets)
+    """
+    home = Path.home()
+    out = []
+    
+    if sys.platform.startswith("win"):
+        steam = (
+            Path(os.getenv("PROGRAMFILES(X86)", "C:/Program Files (x86)"))
+            / "Steam/steamapps/common/Football Manager 26"
+        )
+        epic = (
+            Path(os.getenv("PROGRAMFILES", "C:/Program Files"))
+            / "Epic Games/Football Manager 26"
+        )
+        for base in (steam, epic):
+            for sub in (
+                "fm_Data/StreamingAssets/aa/StandaloneWindows64",
+                "data/StreamingAssets/aa/StandaloneWindows64",
+            ):
+                p = base / sub
+                if p.exists():
+                    out.append(p)
+        
+        # Xbox Game Pass - check C:, D:, E: drives
+        for drive in ("C:", "D:", "E:"):
+            gamepass_base = Path(f"{drive}/XboxGames/Football Manager 26/Content")
+            if gamepass_base.exists():
+                for sub in (
+                    "fm_Data/StreamingAssets/aa/StandaloneWindows64",
+                    "data/StreamingAssets/aa/StandaloneWindows64",
+                ):
+                    p = gamepass_base / sub
+                    if p.exists():
+                        out.append(p)
+    
+    elif sys.platform.startswith("darwin"):
+        # macOS
+        for p in (
+            home
+            / "Library/Application Support/Steam/steamapps/common/Football Manager 26/fm.app/Contents/Resources/Data/StreamingAssets/aa/StandaloneOSX",
+            home
+            / "Library/Application Support/Steam/steamapps/common/Football Manager 26/fm_Data/StreamingAssets/aa/StandaloneOSXUniversal",
+            home
+            / "Library/Application Support/Epic/Football Manager 26/fm_Data/StreamingAssets/aa/StandaloneOSXUniversal",
+        ):
+            if p.exists():
+                out.append(p)
+    
+    else:
+        # Linux/Steam Deck
+        linux_paths = [
+            home / ".local/share/Steam/steamapps/common/Football Manager 26/fm_Data/StreamingAssets/aa/StandaloneLinux64",
+            Path("/run/media/mmcblk0p1/steamapps/common/Football Manager 26/fm_Data/StreamingAssets/aa/StandaloneLinux64"),
+        ]
+        for p in linux_paths:
+            if p.exists():
+                out.append(p)
+    
+    return out
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
     def __init__(self):
         super().__init__()
         self.fm_install_dir: Optional[str] = None
+        self.bundle_dir_path: Optional[str] = None
         self.bundle_manager: Optional[BundleManager] = None
         self.backup_manager: Optional[BackupManager] = None
         self.data_parser = DataParser()
@@ -29,9 +97,9 @@ class MainWindow(QMainWindow):
         self.attribute_data: Optional[Dict[str, Any]] = None
         self.thresholds: list = []
         self.style_classes: list = []
-        self.all_thresholds: list = []  # Full thresholds including Unset/Low
-        self.all_style_classes: list = []  # Full style classes including Unset/Low
-        self.colors: list = []  # Colors for Default preset
+        self.all_thresholds: list = [] 
+        self.all_style_classes: list = []  
+        self.colors: list = [] 
         self.highlight_data_collection: Optional[Dict[str, Any]] = None
         self.highlight_no_border_collection: Optional[Dict[str, Any]] = None
         
@@ -40,19 +108,14 @@ class MainWindow(QMainWindow):
     def _get_icon_path(self):
         """Get the path to the icon file, handling both development and PyInstaller builds."""
         if getattr(sys, 'frozen', False):
-            # Running from PyInstaller executable
-            # Try to find icon in the same directory as the executable
             base_path = Path(sys.executable).parent
         else:
-            # Running from source
             base_path = Path(__file__).parent.parent
         
-        # Try .ico first (Windows)
         icon_path = base_path / "icon.ico"
         if icon_path.exists():
             return str(icon_path)
         
-        # Try .png as fallback
         icon_path = base_path / "icon.png"
         if icon_path.exists():
             return str(icon_path)
@@ -65,7 +128,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(460, 180)
         self.resize(460, 180)
         
-        # Set window icon
         icon_path = self._get_icon_path()
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
@@ -98,7 +160,11 @@ class MainWindow(QMainWindow):
         self.dir_label.setWordWrap(True)
         dir_layout.addWidget(self.dir_label, 1)
         
-        self.select_dir_button = QPushButton("Browse")
+        self.scan_dir_button = QPushButton("Scan (Automatic)")
+        self.scan_dir_button.clicked.connect(self._scan_directory)
+        dir_layout.addWidget(self.scan_dir_button)
+        
+        self.select_dir_button = QPushButton("Browse...")
         self.select_dir_button.clicked.connect(self._select_directory)
         dir_layout.addWidget(self.select_dir_button)
         
@@ -175,6 +241,82 @@ class MainWindow(QMainWindow):
         
         self.statusBar().showMessage("Ready - Select FM installation directory to begin")
     
+    def _scan_directory(self):
+        """Scan for Football Manager 26 directories automatically."""
+        self.statusBar().showMessage("Scanning for FM26 directories...")
+        
+        candidates = scan_for_fm_directories()
+        
+        if not candidates:
+            QMessageBox.information(
+                self,
+                "No Directories Found",
+                "Could not automatically find any Football Manager 26 installation directories.\n\n"
+                "Please use the 'Browse' button to manually select your installation directory."
+            )
+            self.statusBar().showMessage("No directories found - use Browse to select manually")
+            return
+        
+        if len(candidates) == 1:
+            bundle_dir = candidates[0]
+            base_dir = self._extract_base_dir_from_bundle_path(bundle_dir)
+            self.fm_install_dir = str(base_dir) if base_dir else str(bundle_dir.parent.parent.parent.parent)
+            self.bundle_dir_path = str(bundle_dir)
+            self.dir_label.setText(str(bundle_dir))
+            self._load_data()
+        else:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Multiple FM26 Installations Found")
+            dialog.setMinimumSize(600, 300)
+            
+            layout = QVBoxLayout(dialog)
+            
+            label = QLabel("Multiple Football Manager 26 installations were found.\nPlease select one:")
+            layout.addWidget(label)
+            
+            list_widget = QListWidget()
+            for p in candidates:
+                list_widget.addItem(str(p))
+            list_widget.setCurrentRow(0)
+            layout.addWidget(list_widget)
+            
+            button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            button_box.accepted.connect(dialog.accept)
+            button_box.rejected.connect(dialog.reject)
+            layout.addWidget(button_box)
+            
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                selected_items = list_widget.selectedItems()
+                if selected_items:
+                    item = selected_items[0].text()
+                    bundle_dir = Path(item)
+                    base_dir = self._extract_base_dir_from_bundle_path(bundle_dir)
+                    self.fm_install_dir = str(base_dir) if base_dir else str(bundle_dir.parent.parent.parent.parent)
+                    self.bundle_dir_path = str(bundle_dir)
+                    self.dir_label.setText(item)
+                    self._load_data()
+            else:
+                self.statusBar().showMessage("Directory selection cancelled")
+    
+    def _extract_base_dir_from_bundle_path(self, bundle_dir: Path) -> Optional[Path]:
+        """
+        Extract the base Football Manager 26 installation directory from a bundle path.
+        
+        Args:
+            bundle_dir: Full path to bundle directory (e.g., .../StandaloneWindows64)
+            
+        Returns:
+            Base installation directory path, or None if not found
+        """
+        current = bundle_dir
+        for _ in range(10):
+            if current.name == "Football Manager 26":
+                return current
+            if current.parent == current:
+                break
+            current = current.parent
+        return None
+    
     def _select_directory(self):
         """Open directory selection dialog."""
         directory = QFileDialog.getExistingDirectory(
@@ -186,6 +328,7 @@ class MainWindow(QMainWindow):
         
         if directory:
             self.fm_install_dir = directory
+            self.bundle_dir_path = None
             self.dir_label.setText(directory)
             self._load_data()
     
@@ -196,7 +339,10 @@ class MainWindow(QMainWindow):
         
         try:
             self.statusBar().showMessage("Loading bundle files...")
-            self.bundle_manager = BundleManager(self.fm_install_dir)
+            if self.bundle_dir_path:
+                self.bundle_manager = BundleManager(self.fm_install_dir, bundle_dir_path=self.bundle_dir_path)
+            else:
+                self.bundle_manager = BundleManager(self.fm_install_dir)
             self.backup_manager = BackupManager(self.bundle_manager.bundle_dir)
             
             if not self.bundle_manager.bundle_dir.exists():
@@ -352,13 +498,11 @@ class MainWindow(QMainWindow):
     def _on_thresholds_changed(self, thresholds: list):
         """Handle threshold changes."""
         self.thresholds = thresholds
-        # Update full thresholds (preserve first 2 for Unset/Low)
         if len(self.all_thresholds) >= 2:
             self.all_thresholds = self.all_thresholds[:2] + thresholds
         else:
             self.all_thresholds = thresholds
         
-        # Update style classes to match (preserve first 2 for Unset/Low)
         if len(self.all_style_classes) >= 2:
             self.all_style_classes = self.all_style_classes[:2] + self.style_classes
         else:
@@ -368,7 +512,6 @@ class MainWindow(QMainWindow):
     
     def _on_colors_changed(self):
         """Handle colour changes."""
-        # Update colors from threshold editor
         if self.threshold_editor:
             self.colors = self.threshold_editor.get_colors()
         self.statusBar().showMessage("Colours updated")
@@ -376,17 +519,12 @@ class MainWindow(QMainWindow):
     def _on_add_row_requested(self):
         """Handle request to add a new row before the last row."""
         if len(self.thresholds) >= 18:
-            return  # Already checked in ThresholdEditor, but double-check
+            return
         
-        # Calculate index (before last row)
         insert_index = len(self.thresholds) - 1
         
-        # The new row's max value should always be (last row value - 1) = 19
-        # This will cascade other rows if needed
         new_threshold = 19
         
-        # Generate style class name
-        # Find the highest custom number or start from 1
         max_custom_num = 0
         for style_class in self.style_classes:
             if style_class.startswith("attribute-colour-custom-"):
@@ -398,52 +536,33 @@ class MainWindow(QMainWindow):
         
         new_style_class = f"attribute-colour-custom-{max_custom_num + 1}"
         
-        # Get color from adjacent row (previous row, or next row if no previous)
         if insert_index > 0 and insert_index - 1 < len(self.colors):
             new_color = self.colors[insert_index - 1]
         elif insert_index < len(self.colors):
             new_color = self.colors[insert_index]
         else:
-            new_color = "#FFFFFF"  # Default white
+            new_color = "#FFFFFF"
         
-        # Update threshold editor - it will handle the insertion
-        # Insert after the first 3 fixed rows (Range 1, 2, 3), but before the last row
-        # So new rows will appear as Range 4, 5, 6, etc., pushing the last row further down
         num_rows = len(self.threshold_editor.thresholds)
         
-        # Insert at index 3 (after the first 3 fixed rows: Range 1, 2, 3)
-        # This ensures new rows appear after Range 3 but before the last row
         editor_insert_index = 3
         
-        # But make sure we don't insert at or after the last row
-        # If we have 4 or fewer rows, insert before the last one
         if num_rows <= 4:
             editor_insert_index = num_rows - 1
         elif editor_insert_index >= num_rows - 1:
-            # If index 3 would be at or after the last row, insert before the last row instead
             editor_insert_index = num_rows - 1
         
-        # Ensure we have a valid index
         if editor_insert_index < 0:
             editor_insert_index = 0
         
-        # Insert the row at the calculated index
         self.threshold_editor.add_row_at_index(editor_insert_index, new_threshold, new_style_class, new_color)
         
-        # Sync our arrays with the editor's arrays after insertion
-        # The editor has already inserted the row, so we just need to sync
         self.thresholds = self.threshold_editor.thresholds.copy()
         self.style_classes = self.threshold_editor.style_classes.copy()
         self.colors = self.threshold_editor.colors.copy()
         
-        # Update all_thresholds and all_style_classes (includes Unset/Low)
-        # The insert index in all_ arrays is editor_insert_index + 2 (for Unset/Low)
-        # But we need to insert at the same relative position
         all_insert_index = editor_insert_index + 2
-        # Only insert if not already present (editor already handled it in its arrays)
-        # Actually, we need to sync all_ arrays to match the editor's state
         if len(self.all_thresholds) >= 2:
-            # Remove the old editable thresholds (everything after index 1)
             self.all_thresholds = self.all_thresholds[:2] + self.thresholds
             self.all_style_classes = self.all_style_classes[:2] + self.style_classes
         else:
@@ -509,27 +628,22 @@ class MainWindow(QMainWindow):
         try:
             self.statusBar().showMessage("Saving changes...")
             
-            # Get bundle paths
             data_bundle_name = self.bundle_manager.get_data_collection_bundle_name()
             style_bundle_name = self.bundle_manager.get_style_bundle_name()
             
             data_bundle_path = self.bundle_manager.get_bundle_path(data_bundle_name)
             style_bundle_path = self.bundle_manager.get_bundle_path(style_bundle_name)
             
-            # Update attribute data collection
-            # Use full thresholds and style classes (including Unset/Low) for saving
             updated_attr_data = self.data_parser.update_attribute_data_collection(
                 self.attribute_data if self.attribute_data else {},
                 self.all_thresholds,
                 self.all_style_classes
             )
             
-            # Prepare objects to write
             data_objects = {
                 "AttributeDataCollection": updated_attr_data
             }
             
-            # Update only AttributeColoursDefault
             default_preset_obj = self.bundle_manager.get_object_from_bundle(
                 style_bundle_name,
                 "AttributeColoursDefault"
@@ -537,26 +651,19 @@ class MainWindow(QMainWindow):
             
             style_objects = {}
             if default_preset_obj:
-                # Get colors from threshold editor (only editable ones, without Unset/Low)
                 editable_colors_hex = self.colors
-                # Convert hex to RGBA
                 editable_colors_rgba = []
                 for hex_color in editable_colors_hex:
                     rgba = self.data_parser.hex_to_rgba(hex_color)
                     editable_colors_rgba.append(rgba)
                 
-                # Get original colors to preserve Unset and Low
                 original_colors_rgba = self.data_parser.extract_colors_from_rules(default_preset_obj)
                 
-                # Combine: original first 2 colors (Unset/Low) + editable colors
                 if len(original_colors_rgba) >= 2:
-                    # Preserve first 2 colors (Unset/Low), then add editable ones
                     full_colors_rgba = original_colors_rgba[:2] + editable_colors_rgba
                 else:
-                    # Fallback if original doesn't have 2 colors
                     full_colors_rgba = editable_colors_rgba
                 
-                # Use full style classes (including Unset/Low) for saving
                 updated_preset = self.data_parser.update_color_preset(
                     default_preset_obj,
                     full_colors_rgba,
@@ -565,7 +672,6 @@ class MainWindow(QMainWindow):
                 
                 style_objects["AttributeColoursDefault"] = updated_preset
             
-            # Update highlight collections
             if self.highlight_data_collection:
                 highlight_enabled = self.highlight_checkbox.isChecked()
                 updated_highlight_data = self.data_parser.update_attribute_highlight_collection(
@@ -584,7 +690,6 @@ class MainWindow(QMainWindow):
                 )
                 data_objects["AttributeHighlightTypeNoBorderDataCollection"] = updated_highlight_no_border
             
-            # Write bundles
             self.bundle_manager.write_bundle(data_bundle_name, data_objects)
             if style_objects:
                 self.bundle_manager.write_bundle(style_bundle_name, style_objects)
@@ -598,7 +703,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Changes saved successfully")
             
         except Exception as e:
-            # Create a custom dialog with scrollable text for long error messages
             error_dialog = QDialog(self)
             error_dialog.setWindowTitle("Save Error")
             error_dialog.setMinimumSize(600, 400)
@@ -629,7 +733,6 @@ class MainWindow(QMainWindow):
         data_bundle_name = self.bundle_manager.get_data_collection_bundle_name()
         style_bundle_name = self.bundle_manager.get_style_bundle_name()
         
-        # Get original backups
         data_original = self.backup_manager.get_original_backup(data_bundle_name)
         style_original = self.backup_manager.get_original_backup(style_bundle_name)
         
@@ -641,7 +744,6 @@ class MainWindow(QMainWindow):
             )
             return
         
-        # Confirm restore
         reply = QMessageBox.question(
             self,
             "Restore Original Files",
@@ -655,7 +757,6 @@ class MainWindow(QMainWindow):
                 data_bundle_path = self.bundle_manager.get_bundle_path(data_bundle_name)
                 style_bundle_path = self.bundle_manager.get_bundle_path(style_bundle_name)
                 
-                # Restore original backups
                 restored = False
                 if data_original:
                     if self.backup_manager.restore_backup(data_original, data_bundle_path):
@@ -671,7 +772,6 @@ class MainWindow(QMainWindow):
                         "Original files restored successfully.\n\nReloading data..."
                     )
                     self.statusBar().showMessage("Original files restored, reloading data...")
-                    # Reload data from the restored files
                     self._load_data()
                 else:
                     QMessageBox.warning(
@@ -686,4 +786,3 @@ class MainWindow(QMainWindow):
                     "Restore Error",
                     f"Failed to restore backup:\n{str(e)}"
                 )
-
